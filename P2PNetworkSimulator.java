@@ -1,13 +1,14 @@
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import java.awt.image.BufferedImage;
 import java.util.*;
 import java.util.concurrent.*;
 
-public class P2PNetworkSimulator extends JFrame implements ActionListener, MouseListener {
+public class P2PNetworkSimulator extends JFrame implements ActionListener, MouseListener, ChangeListener {
     private static final long serialVersionUID = 1L;
-    private Container pane;
     private BufferedImage display;
     private java.awt.image.BufferStrategy strategy;
     private static final int width = 1024, height = 768;
@@ -17,60 +18,72 @@ public class P2PNetworkSimulator extends JFrame implements ActionListener, Mouse
     private double speedFactor = 1.0;
     private boolean pause = false;
 
+    private JPanel controlPanel;
+    private JButton addNodeButton;
+    private JButton removeNodeButton;
+    private JSlider speedSlider;
+    private JButton changeColorButton;
+    private JPanel canvasPanel;
+
     public static void main(String[] args) {
-        P2PNetworkSimulator window = new P2PNetworkSimulator();
-        window.init();
-        window.addWindowListener(new WindowAdapter() {
-            public void windowClosing(WindowEvent e) {
-                System.exit(0);
-            }
+        SwingUtilities.invokeLater(() -> {
+            P2PNetworkSimulator window = new P2PNetworkSimulator();
+            window.setupGUI();
         });
-        window.setSize(width, height);
-        window.setVisible(true);
     }
 
-    public void init() {
-        pane = getContentPane();
-        pane.setLayout(null);
-        pane.addMouseListener(this);
-        pane.requestFocus();
+    public void setupGUI() {
+        setTitle("P2P Network Simulator");
+        setSize(width, height);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        controlPanel = new JPanel();
+        controlPanel.setLayout(new GridLayout(5, 1, 10, 10));
+
+        addNodeButton = new JButton("Add Node");
+        addNodeButton.addActionListener(this);
+        controlPanel.add(addNodeButton);
+
+        removeNodeButton = new JButton("Subtract Node");
+        removeNodeButton.addActionListener(this);
+        controlPanel.add(removeNodeButton);
+
+        speedSlider = new JSlider(JSlider.HORIZONTAL, 1, 200, 100);
+        speedSlider.setMajorTickSpacing(50);
+        speedSlider.setMinorTickSpacing(10);
+        speedSlider.setPaintTicks(true);
+        speedSlider.setPaintLabels(true);
+        speedSlider.addChangeListener(this);
+        controlPanel.add(speedSlider);
+
+        changeColorButton = new JButton("Change Node Colour");
+        changeColorButton.addActionListener(this);
+        controlPanel.add(changeColorButton);
+
+        add(controlPanel, BorderLayout.EAST);
+
+        canvasPanel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                paintNetwork(g);
+            }
+        };
+        canvasPanel.setBackground(Color.WHITE);
+        add(canvasPanel, BorderLayout.CENTER);
+
         javax.swing.Timer clock = new javax.swing.Timer(10, this);
         clock.start();
 
         net = new Network(30, 0.01f, .1f, 0.2f, 100f, 12345);
-
-        addButtons();
-
         for (int k = 0; k < maxnodes; k++) {
             addNode();
         }
-    }
 
-    private void addButtons() {
-        JButton addNodeButton = new JButton("Add Node");
-        addNodeButton.setBounds(10, 10, 120, 30);
-        addNodeButton.addActionListener(e -> addNode());
-        pane.add(addNodeButton);
-
-        JButton removeNodeButton = new JButton("Remove Node");
-        removeNodeButton.setBounds(140, 10, 120, 30);
-        removeNodeButton.addActionListener(e -> removeNode());
-        pane.add(removeNodeButton);
-
-        JButton speedUpButton = new JButton("Speed Up");
-        speedUpButton.setBounds(270, 10, 120, 30);
-        speedUpButton.addActionListener(e -> adjustSpeed(1.1));
-        pane.add(speedUpButton);
-
-        JButton slowDownButton = new JButton("Slow Down");
-        slowDownButton.setBounds(400, 10, 120, 30);
-        slowDownButton.addActionListener(e -> adjustSpeed(0.9));
-        pane.add(slowDownButton);
-
-        JButton pauseButton = new JButton("Pause/Resume");
-        pauseButton.setBounds(530, 10, 120, 30);
-        pauseButton.addActionListener(e -> togglePause());
-        pane.add(pauseButton);
+        setVisible(true);
+        createBufferStrategy(2);
+        strategy = getBufferStrategy();
     }
 
     public void addNode() {
@@ -102,44 +115,69 @@ public class P2PNetworkSimulator extends JFrame implements ActionListener, Mouse
         pause = !pause;
     }
 
-    public void paint(Graphics g) {
-        if (display == null) {
-            createBufferStrategy(2);
-            strategy = getBufferStrategy();
-            display = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    public void resetSimulation() {
+        net.stop();
+        nodes = 0;
+        net = new Network(30, 0.01f, .1f, 0.2f, 100f, 12345);
+        for (int k = 0; k < maxnodes; k++) {
+            addNode();
         }
-
-        Graphics g2 = strategy.getDrawGraphics();
-        paint2(g2);
-        strategy.show();
     }
 
-    public void paint2(Graphics g) {
-        g.setColor(Color.white);
-        g.fillRect(0, 0, width, height);
+    public void changeNodeColor() {
+        Random rand = new Random();
+        net.nodes.values().forEach(node -> {
+            node.setColor(new Color(rand.nextInt(256), rand.nextInt(256), rand.nextInt(256)));
+        });
+    }
+
+    public void paintNetwork(Graphics g) {
         net.draw(g, 2f);
     }
 
+    @Override
     public void actionPerformed(ActionEvent e) {
+        if (e.getSource() == addNodeButton) {
+            addNode();
+        } else if (e.getSource() == removeNodeButton) {
+            removeNode();
+        } else if (e.getSource() == changeColorButton) {
+            changeNodeColor();
+        }
+
         if (!pause) {
-            repaint();
+            canvasPanel.repaint();
         }
     }
 
+    @Override
     public void mousePressed(MouseEvent e) {
-        pane.requestFocus();
+        requestFocus();
     }
 
+    @Override
     public void mouseClicked(MouseEvent e) {
     }
 
+    @Override
     public void mouseReleased(MouseEvent e) {
     }
 
+    @Override
     public void mouseEntered(MouseEvent e) {
     }
 
+    @Override
     public void mouseExited(MouseEvent e) {
+    }
+
+    @Override
+    public void stateChanged(ChangeEvent e) {
+        JSlider source = (JSlider) e.getSource();
+        if (!source.getValueIsAdjusting()) {
+            int speed = (int) source.getValue();
+            net.time_speed = speed / 100.0;
+        }
     }
 
     class Network implements Runnable {
@@ -373,10 +411,16 @@ public class P2PNetworkSimulator extends JFrame implements ActionListener, Mouse
         public float flow;
         public double last_time;
         public double clock_offset;
+        private Color color;
 
         public Node(String address) {
             this.address = address;
             message_queue = new LinkedBlockingQueue<>();
+            this.color = Color.GREEN; // Default color
+        }
+
+        public void setColor(Color color) {
+            this.color = color;
         }
 
         public void receive(String from, byte[] message) {
@@ -399,14 +443,9 @@ public class P2PNetworkSimulator extends JFrame implements ActionListener, Mouse
 
         public synchronized void draw(Graphics gr) {
             if (!stopped) {
-                int r = 0, g = 0;
-                float mid = maximum_flow / 2;
-                if (flow < mid) {
-                    r = (int) (255 * (mid - flow) / mid);
-                } else {
-                    g = (int) (255 * (flow - mid) / mid);
-                }
-                gr.setColor(new Color(Math.min(r, 255), Math.min(g, 255), 0));
+                gr.setColor(this.color);
+                gr.fillOval((int) x - 10, (int) y - 10, 20, 20);
+                gr.setColor(Color.BLACK);
                 gr.drawOval((int) x - 10, (int) y - 10, 20, 20);
             }
         }
